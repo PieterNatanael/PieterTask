@@ -9,6 +9,8 @@ import SwiftUI
 
 @main
 struct PieterTaskApp: App {
+    @StateObject private var playlistStore = PlaylistStore()
+    
     var body: some Scene {
         WindowGroup {
             ContentView()
