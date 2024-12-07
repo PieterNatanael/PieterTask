@@ -9,7 +9,7 @@
 
 import SwiftUI
 
-struct LibraryView1: View {
+struct HomeView: View {
     var body: some View {
         VStack {
             Image(systemName: "slowmo")
@@ -22,6 +22,6 @@ struct LibraryView1: View {
 }
 
 #Preview {
-    LibraryView1()
+    HomeView()
 }
  

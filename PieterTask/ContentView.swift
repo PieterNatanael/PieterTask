@@ -6,18 +6,34 @@
 //
 
 
+
 import Foundation
 import SwiftUI
+import Combine
 
+// MARK: - Models
+
+/// Represents a single song with unique identification
 struct Song: Identifiable, Codable, Equatable {
-    let id = UUID()
+    let id: UUID
     let trackName: String
     let artistName: String
     let albumName: String
     let previewUrl: String?
     let artworkUrl: String?
+    
+    // Custom initializer to ensure consistent ID generation
+    init(id: UUID = UUID(), trackName: String, artistName: String, albumName: String, previewUrl: String? = nil, artworkUrl: String? = nil) {
+        self.id = id
+        self.trackName = trackName
+        self.artistName = artistName
+        self.albumName = albumName
+        self.previewUrl = previewUrl
+        self.artworkUrl = artworkUrl
+    }
 }
 
+/// Represents a playlist containing multiple songs
 struct Playlist: Identifiable, Codable, Equatable {
     let id: UUID
     var name: String
@@ -30,64 +46,24 @@ struct Playlist: Identifiable, Codable, Equatable {
     }
 }
 
-// PlaylistStore.swift
-import Foundation
+// MARK: - Networking Service
 
-class PlaylistStore: ObservableObject {
-    @Published var playlists: [Playlist] = []
-    
-    private let playlistsKey = "savedPlaylists"
-    
-    init() {
-        loadPlaylists()
-    }
-    
-    func addPlaylist(name: String) {
-        let newPlaylist = Playlist(name: name)
-        playlists.append(newPlaylist)
-        savePlaylists()
-    }
-    
-    func addSongToPlaylist(playlistId: UUID, song: Song) {
-        if let index = playlists.firstIndex(where: { $0.id == playlistId }) {
-            playlists[index].songs.append(song)
-            savePlaylists()
-        }
-    }
-    
-    private func savePlaylists() {
-        let encoder = JSONEncoder()
-        if let encoded = try? encoder.encode(playlists) {
-            UserDefaults.standard.set(encoded, forKey: playlistsKey)
-        }
-    }
-    
-    private func loadPlaylists() {
-        if let savedPlaylists = UserDefaults.standard.object(forKey: playlistsKey) as? Data {
-            let decoder = JSONDecoder()
-            if let loadedPlaylists = try? decoder.decode([Playlist].self, from: savedPlaylists) {
-                playlists = loadedPlaylists
-            }
-        }
-    }
-}
-
-// ITunesSearchService.swift
-import Foundation
-import Combine
-
+/// Handles iTunes search API interactions
 class ITunesSearchService {
+    /// Defines potential search errors
     enum SearchError: Error {
         case invalidURL
         case networkError
         case decodingError
     }
     
-    struct ITunesSearchResponse: Codable {
+    /// Intermediate struct for decoding iTunes API response
+    private struct ITunesSearchResponse: Codable {
         let results: [ITunesSong]
     }
     
-    struct ITunesSong: Codable {
+    /// iTunes song representation for API mapping
+    private struct ITunesSong: Codable {
         let trackName: String
         let artistName: String
         let collectionName: String
@@ -95,6 +71,9 @@ class ITunesSearchService {
         let artworkUrl100: String?
     }
     
+    /// Search songs using iTunes API
+    /// - Parameter query: Search text for songs
+    /// - Returns: Publisher of Song array or error
     func searchSongs(query: String) -> AnyPublisher<[Song], Error> {
         guard let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
               let url = URL(string: "https://itunes.apple.com/search?term=\(encodedQuery)&entity=song") else {
@@ -120,320 +99,36 @@ class ITunesSearchService {
     }
 }
 
-// SongSearchView.swift
-import SwiftUI
-import Combine
+// MARK: - Playlist Management
 
-struct SongSearchView: View {
-    @Environment(\.presentationMode) var presentationMode
-   
-    
-    @State private var searchText = ""
-    @State private var songs: [Song] = []
-    @State private var isLoading = false
-    @State private var errorMessage: String?
-    @State private var cancellables = Set<AnyCancellable>()
-    
-    let playlist: Playlist
-        @EnvironmentObject var playlistStore: PlaylistStore
-    
-    private let searchService = ITunesSearchService()
-   
-    
-    var body: some View {
-        VStack {
-            TextField("Search Songs", text: $searchText)
-                .textFieldStyle(RoundedBorderTextFieldStyle())
-                .padding()
-                .onChange(of: searchText) { newValue in
-                    searchSongs(query: newValue)
-                }
-            
-            if isLoading {
-                ProgressView()
-            } else if let errorMessage = errorMessage {
-                Text(errorMessage)
-                    .foregroundColor(.red)
-            } else {
-                List(songs) { song in
-                    HStack {
-                        if let artworkUrl = song.artworkUrl, let url = URL(string: artworkUrl) {
-                            AsyncImage(url: url) { image in
-                                image
-                                    .resizable()
-                                    .scaledToFit()
-                                    .frame(width: 50, height: 50) // Set size
-                                    .cornerRadius(5)
-                            } placeholder: {
-                                ProgressView()
-                            }
-                        } else {
-                            Image(systemName: "photo")
-                                .resizable()
-                                .scaledToFit()
-                                .frame(width: 50, height: 50)
-                                .foregroundColor(.gray)
-                        }
-                        VStack(alignment: .leading) {
-                            Text(song.trackName)
-                                .font(.headline)
-                            Text(song.artistName)
-                                .font(.subheadline)
-                        }
-                        Spacer()
-                        Button(action: {
-                            saveSongToPlaylist(song)
-                        }) {
-                            Image(systemName: "plus.circle")
-                        }
-                    }
-                }
-        }
-    }
-        .navigationTitle("Add Songs")
-}
-    
-    private func searchSongs(query: String) {
-        guard !query.isEmpty else {
-            songs = []
-            return
-        }
-        
-        isLoading = true
-        errorMessage = nil
-        
-        cancellables.removeAll()
-        
-        
-        searchService.searchSongs(query: query)
-            .sink(receiveCompletion: { completion in
-                isLoading = false
-                switch completion {
-                case .failure(let error):
-                    errorMessage = "Search failed: \(error.localizedDescription)"
-                case .finished:
-                    break
-                }
-            }, receiveValue: { fetchedSongs in
-                songs = fetchedSongs
-            })
-            .store(in: &cancellables)
-    }
-    
-    private func saveSongToPlaylist(_ song: Song) {
-          playlistStore.addSongToPlaylist(playlistId: playlist.id, song: song)
-          presentationMode.wrappedValue.dismiss()
-      }
-  }
-
-// LibraryView.swift
-import SwiftUI
-
-struct LibraryView: View {
-    @EnvironmentObject var playlistStore: PlaylistStore
-    @State private var isGridView = false
-    @State private var showingAddPlaylistAlert = false
-    @State private var newPlaylistName = ""
-    
-    var body: some View {
-        NavigationView {
-            VStack {
-                Toggle("Grid View", isOn: $isGridView)
-                    .padding()
-                
-                if isGridView {
-                    gridView
-                } else {
-                    tableView
-                }
-            }
-            .navigationTitle("Library")
-            .navigationBarItems(
-                trailing: Button(action: {
-                    showingAddPlaylistAlert = true
-                }) {
-                    Image(systemName: "plus")
-                }
-            )
-            .alert("New Playlist", isPresented: $showingAddPlaylistAlert) {
-                TextField("Playlist Name", text: $newPlaylistName)
-                Button("Create", action: createPlaylist)
-                Button("Cancel", role: .cancel) {}
-            }
-        }
-    }
-    
-    private var gridView: some View {
-        ScrollView {
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())]) {
-                ForEach(playlistStore.playlists) { playlist in
-                    playlistCell(playlist)
-                }
-            }
-        }
-    }
-    
-    private var tableView: some View {
-        List {
-            ForEach(playlistStore.playlists) { playlist in
-                     playlistCell(playlist)
-            }
-        }
-    }
-    
-    private func playlistCell(_ playlist: Playlist) -> some View {
-        NavigationLink(destination: PlaylistDetailView(playlist: playlist)) {
-            HStack {
-                Text(playlist.name)
-                Spacer()
-                Text("\(playlist.songs.count) songs")
-                    .foregroundColor(.gray)
-            }
-        }
-    }
-    
-    private func createPlaylist() {
-        guard !newPlaylistName.isEmpty else { return }
-        playlistStore.addPlaylist(name: newPlaylistName)
-        newPlaylistName = ""
-    }
-}
-
-
-// PlaylistDetailView.swift
-import SwiftUI
-
-struct PlaylistDetailView: View {
-    @EnvironmentObject var playlistStore: PlaylistStore
-    @State private var playlist: Playlist
-    @State private var isSearchPresented = false
-    
-    // Initialize with the playlist
-    init(playlist: Playlist) {
-        _playlist = State(initialValue: playlist)
-    }
-    
-    var body: some View {
-        VStack {
-            List(playlist.songs) { song in
-                HStack {
-                    if let artworkUrl = song.artworkUrl, let url = URL(string: artworkUrl) {
-                        AsyncImage(url: url) { image in
-                            image
-                                .resizable()
-                                .scaledToFit()
-                                .frame(width: 50, height: 50)
-                                .cornerRadius(5)
-                        } placeholder: {
-                            ProgressView()
-                        }
-                    } else {
-                        Image(systemName: "photo")
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 50, height: 50)
-                            .foregroundColor(.gray)
-                    }
-                    VStack(alignment: .leading) {
-                        Text(song.trackName)
-                            .font(.headline)
-                        Text(song.artistName)
-                            .font(.subheadline)
-                    }
-                }
-            }
-            
-            Button("Add Songs") {
-                isSearchPresented = true
-            }
-            .sheet(isPresented: $isSearchPresented) {
-                SongSearchView(playlist: playlist)
-            }
-        }
-        .navigationTitle(playlist.name)
-        .onAppear {
-            // Refresh the playlist from the store
-            if let updatedPlaylist = playlistStore.playlists.first(where: { $0.id == playlist.id }) {
-                playlist = updatedPlaylist
-            }
-        }
-        // Add this modifier to update immediately when songs change
-        .onChange(of: playlistStore.playlists) { _ in
-            if let updatedPlaylist = playlistStore.playlists.first(where: { $0.id == playlist.id }) {
-                playlist = updatedPlaylist
-            }
-        }
-    }
-}
-
-    
-// ContentView.swift
-import SwiftUI
-
-struct ContentView: View {
-    var body: some View {
-        LibraryView()
-            .environmentObject(PlaylistStore())
-    }
-}
-
-#Preview {
-    ContentView()
-        .environmentObject(PlaylistStore())
-}
-
-
-
-/*
- //want to add album image
-import Foundation
-import SwiftUI
-
-struct Song: Identifiable, Codable, Equatable {
-    let id = UUID()
-    let trackName: String
-    let artistName: String
-    let albumName: String
-    let previewUrl: String?
-}
-
-struct Playlist: Identifiable, Codable, Equatable {
-    let id: UUID
-    var name: String
-    var songs: [Song]
-    
-    init(id: UUID = UUID(), name: String, songs: [Song] = []) {
-        self.id = id
-        self.name = name
-        self.songs = songs
-    }
-}
-
-// PlaylistStore.swift
-import Foundation
-
+/// Manages playlist storage and persistence
 class PlaylistStore: ObservableObject {
     @Published var playlists: [Playlist] = []
-    
     private let playlistsKey = "savedPlaylists"
     
     init() {
         loadPlaylists()
     }
     
+    /// Add a new playlist
+    /// - Parameter name: Name of the playlist
     func addPlaylist(name: String) {
         let newPlaylist = Playlist(name: name)
         playlists.append(newPlaylist)
         savePlaylists()
     }
     
+    /// Add a song to a specific playlist
+    /// - Parameters:
+    ///   - playlistId: Unique identifier of the playlist
+    ///   - song: Song to be added
     func addSongToPlaylist(playlistId: UUID, song: Song) {
-        if let index = playlists.firstIndex(where: { $0.id == playlistId }) {
-            playlists[index].songs.append(song)
-            savePlaylists()
-        }
+        guard let index = playlists.firstIndex(where: { $0.id == playlistId }) else { return }
+        playlists[index].songs.append(song)
+        savePlaylists()
     }
     
+    /// Save playlists to UserDefaults
     private func savePlaylists() {
         let encoder = JSONEncoder()
         if let encoded = try? encoder.encode(playlists) {
@@ -441,69 +136,23 @@ class PlaylistStore: ObservableObject {
         }
     }
     
+    /// Load playlists from UserDefaults
     private func loadPlaylists() {
-        if let savedPlaylists = UserDefaults.standard.object(forKey: playlistsKey) as? Data {
-            let decoder = JSONDecoder()
-            if let loadedPlaylists = try? decoder.decode([Playlist].self, from: savedPlaylists) {
-                playlists = loadedPlaylists
-            }
-        }
+        guard let savedPlaylists = UserDefaults.standard.data(forKey: playlistsKey) else { return }
+        let decoder = JSONDecoder()
+        playlists = (try? decoder.decode([Playlist].self, from: savedPlaylists)) ?? []
     }
 }
 
-// ITunesSearchService.swift
-import Foundation
-import Combine
 
-class ITunesSearchService {
-    enum SearchError: Error {
-        case invalidURL
-        case networkError
-        case decodingError
-    }
-    
-    struct ITunesSearchResponse: Codable {
-        let results: [ITunesSong]
-    }
-    
-    struct ITunesSong: Codable {
-        let trackName: String
-        let artistName: String
-        let collectionName: String
-        let previewUrl: String?
-    }
-    
-    func searchSongs(query: String) -> AnyPublisher<[Song], Error> {
-        guard let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let url = URL(string: "https://itunes.apple.com/search?term=\(encodedQuery)&entity=song") else {
-            return Fail(error: SearchError.invalidURL).eraseToAnyPublisher()
-        }
-        
-        return URLSession.shared.dataTaskPublisher(for: url)
-            .map { $0.data }
-            .decode(type: ITunesSearchResponse.self, decoder: JSONDecoder())
-            .map { response in
-                response.results.map { itunesSong in
-                    Song(
-                        trackName: itunesSong.trackName,
-                        artistName: itunesSong.artistName,
-                        albumName: itunesSong.collectionName,
-                        previewUrl: itunesSong.previewUrl
-                    )
-                }
-            }
-            .receive(on: DispatchQueue.main)
-            .eraseToAnyPublisher()
-    }
-}
-
-// SongSearchView.swift
 import SwiftUI
 import Combine
 
+// MARK: - Song Search View
+
 struct SongSearchView: View {
     @Environment(\.presentationMode) var presentationMode
-   
+    @EnvironmentObject var playlistStore: PlaylistStore
     
     @State private var searchText = ""
     @State private var songs: [Song] = []
@@ -512,46 +161,98 @@ struct SongSearchView: View {
     @State private var cancellables = Set<AnyCancellable>()
     
     let playlist: Playlist
-        @EnvironmentObject var playlistStore: PlaylistStore
-    
     private let searchService = ITunesSearchService()
-   
     
     var body: some View {
         VStack {
-            TextField("Search Songs", text: $searchText)
-                .textFieldStyle(RoundedBorderTextFieldStyle())
-                .padding()
-                .onChange(of: searchText) { newValue in
-                    searchSongs(query: newValue)
-                }
+            searchField
             
             if isLoading {
                 ProgressView()
             } else if let errorMessage = errorMessage {
-                Text(errorMessage)
-                    .foregroundColor(.red)
+                errorMessageView(errorMessage)
             } else {
-                List(songs) { song in
-                    HStack {
-                        VStack(alignment: .leading) {
-                            Text(song.trackName)
-                                .font(.headline)
-                            Text(song.artistName)
-                                .font(.subheadline)
-                        }
-                        Spacer()
-                        Button(action: {
-                                               saveSongToPlaylist(song)
-                                           }) {
-                                               Image(systemName: "plus.circle")
-                    }
+                songListView
+            }
+        }
+        .navigationTitle("Add Songs")
+        .onChange(of: searchText) { newValue in
+            searchSongs(query: newValue)
+        }
+    }
+    
+    // MARK: - Subviews
+    
+    private var searchField: some View {
+        TextField("Search Songs", text: $searchText)
+            .textFieldStyle(RoundedBorderTextFieldStyle())
+            .padding()
+    }
+    
+    private var songListView: some View {
+        List(songs) { song in
+            songRowView(song)
+        }
+    }
+    
+    private func songRowView(_ song: Song) -> some View {
+        HStack {
+            songArtworkView(song)
+            songDetailsView(song)
+            Spacer()
+            addSongButton(song)
+        }
+    }
+    
+    private func songArtworkView(_ song: Song) -> some View {
+        Group {
+            if let artworkUrl = song.artworkUrl, let url = URL(string: artworkUrl) {
+                AsyncImage(url: url) { image in
+                    image
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 50, height: 50)
+                        .cornerRadius(5)
+                } placeholder: {
+                    placeholderImageView()
                 }
+            } else {
+                placeholderImageView()
             }
         }
     }
-        .navigationTitle("Add Songs")
-}
+    
+    private func placeholderImageView() -> some View {
+        Image(systemName: "photo")
+            .resizable()
+            .scaledToFit()
+            .frame(width: 50, height: 50)
+            .foregroundColor(.gray)
+    }
+    
+    private func songDetailsView(_ song: Song) -> some View {
+        VStack(alignment: .leading) {
+            Text(song.trackName)
+                .font(.headline)
+            Text(song.artistName)
+                .font(.subheadline)
+        }
+    }
+    
+    private func addSongButton(_ song: Song) -> some View {
+        Button(action: {
+            saveSongToPlaylist(song)
+        }) {
+            Image(systemName: "plus.circle")
+        }
+    }
+    
+    private func errorMessageView(_ message: String) -> some View {
+        Text(message)
+            .foregroundColor(.red)
+    }
+    
+    // MARK: - Private Methods
     
     private func searchSongs(query: String) {
         guard !query.isEmpty else {
@@ -561,64 +262,208 @@ struct SongSearchView: View {
         
         isLoading = true
         errorMessage = nil
-        
         cancellables.removeAll()
         
-        
         searchService.searchSongs(query: query)
-            .sink(receiveCompletion: { completion in
-                isLoading = false
-                switch completion {
-                case .failure(let error):
-                    errorMessage = "Search failed: \(error.localizedDescription)"
-                case .finished:
-                    break
-                }
-            }, receiveValue: { fetchedSongs in
-                songs = fetchedSongs
-            })
+            .sink(receiveCompletion: handleSearchCompletion, receiveValue: updateSongs)
             .store(in: &cancellables)
     }
     
+    private func handleSearchCompletion(_ completion: Subscribers.Completion<Error>) {
+        isLoading = false
+        
+        switch completion {
+        case .failure(let error):
+            errorMessage = "Search failed: \(error.localizedDescription)"
+        case .finished:
+            break
+        }
+    }
+    
+    private func updateSongs(_ fetchedSongs: [Song]) {
+        songs = fetchedSongs
+    }
+    
     private func saveSongToPlaylist(_ song: Song) {
-          playlistStore.addSongToPlaylist(playlistId: playlist.id, song: song)
-          presentationMode.wrappedValue.dismiss()
-      }
-  }
+        playlistStore.addSongToPlaylist(playlistId: playlist.id, song: song)
+        presentationMode.wrappedValue.dismiss()
+    }
+}
 
-// LibraryView.swift
-import SwiftUI
+// MARK: - Playlist Detail View
+
+struct PlaylistDetailView: View {
+    @EnvironmentObject var playlistStore: PlaylistStore
+    @State private var playlist: Playlist
+    @State private var isSearchPresented = false
+    
+    init(playlist: Playlist) {
+        _playlist = State(initialValue: playlist)
+    }
+    
+    var body: some View {
+        VStack {
+            playlistHeader
+            songList
+        }
+        .navigationBarItems(trailing: addSongButton)
+        .sheet(isPresented: $isSearchPresented) {
+            SongSearchView(playlist: playlist)
+        }
+        .onAppear(perform: updatePlaylist)
+        .onChange(of: playlistStore.playlists) { _ in updatePlaylist() }
+    }
+    
+    private var playlistHeader: some View {
+        VStack {
+            Text(playlist.name)
+                .font(.title)
+                .fontWeight(.bold)
+            Text("\(playlist.songs.count) Songs")
+                .foregroundColor(.gray)
+        }
+        .padding()
+    }
+    
+    private var songList: some View {
+        List(playlist.songs) { song in
+            songRowView(song)
+        }
+    }
+    
+    private func songRowView(_ song: Song) -> some View {
+        HStack {
+            songArtworkView(song)
+            songDetailsView(song)
+        }
+    }
+    
+    private func songArtworkView(_ song: Song) -> some View {
+        Group {
+            if let artworkUrl = song.artworkUrl, let url = URL(string: artworkUrl) {
+                AsyncImage(url: url) { image in
+                    image
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 50, height: 50)
+                        .cornerRadius(5)
+                } placeholder: {
+                    placeholderImageView()
+                }
+            } else {
+                placeholderImageView()
+            }
+        }
+    }
+    
+    private func placeholderImageView() -> some View {
+        Image(systemName: "photo")
+            .resizable()
+            .scaledToFit()
+            .frame(width: 50, height: 50)
+            .foregroundColor(.gray)
+    }
+    
+    private func songDetailsView(_ song: Song) -> some View {
+        VStack(alignment: .leading) {
+            Text(song.trackName)
+                .font(.headline)
+            Text(song.artistName)
+                .font(.subheadline)
+        }
+    }
+    
+    private var addSongButton: some View {
+        Button(action: { isSearchPresented = true }) {
+            Image(systemName: "plus")
+        }
+    }
+    
+    private func updatePlaylist() {
+        if let updatedPlaylist = playlistStore.playlists.first(where: { $0.id == playlist.id }) {
+            playlist = updatedPlaylist
+        }
+    }
+}
+
+// MARK: - Library View
 
 struct LibraryView: View {
     @EnvironmentObject var playlistStore: PlaylistStore
-    @State private var isGridView = false
+    @State private var viewMode: ViewMode = .list
     @State private var showingAddPlaylistAlert = false
     @State private var newPlaylistName = ""
+    
+    enum ViewMode {
+        case list, grid
+    }
     
     var body: some View {
         NavigationView {
             VStack {
-                Toggle("Grid View", isOn: $isGridView)
-                    .padding()
-                
-                if isGridView {
-                    gridView
-                } else {
-                    tableView
-                }
+                headerSection
+                viewModeContent
             }
-            .navigationTitle("Library")
-            .navigationBarItems(
-                trailing: Button(action: {
-                    showingAddPlaylistAlert = true
-                }) {
-                    Image(systemName: "plus")
-                }
-            )
+            .navigationBarHidden(true)
             .alert("New Playlist", isPresented: $showingAddPlaylistAlert) {
-                TextField("Playlist Name", text: $newPlaylistName)
-                Button("Create", action: createPlaylist)
-                Button("Cancel", role: .cancel) {}
+                alertContent
+            }
+        }
+    }
+    
+    private var headerSection: some View {
+        HStack {
+            userProfileImage
+            headerTitle
+            Spacer()
+            actionButtons
+        }
+        .padding()
+    }
+    
+    private var userProfileImage: some View {
+        Image("Image1")
+            .resizable()
+            .aspectRatio(contentMode: .fit)
+            .frame(width: 40, height: 40)
+            .clipShape(Circle())
+    }
+    
+    private var headerTitle: some View {
+        Text("Your Library")
+            .font(.title)
+            .fontWeight(.bold)
+    }
+    
+    private var actionButtons: some View {
+        VStack(alignment: .trailing, spacing: 10) {
+            addPlaylistButton
+            toggleViewModeButton
+        }
+    }
+    
+    private var addPlaylistButton: some View {
+        Button(action: { showingAddPlaylistAlert = true }) {
+            Image(systemName: "plus")
+                .actionButtonStyle()
+        }
+    }
+    
+    private var toggleViewModeButton: some View {
+        Button(action: {
+            viewMode = viewMode == .list ? .grid : .list
+        }) {
+            Image(systemName: viewMode == .list ? "square.grid.2x2" : "list.bullet")
+                .actionButtonStyle()
+        }
+    }
+    
+    private var viewModeContent: some View {
+        Group {
+            if viewMode == .grid {
+                gridView
+            } else {
+                tableView
             }
         }
     }
@@ -630,13 +475,14 @@ struct LibraryView: View {
                     playlistCell(playlist)
                 }
             }
+            .padding()
         }
     }
     
     private var tableView: some View {
         List {
             ForEach(playlistStore.playlists) { playlist in
-                     playlistCell(playlist)
+                playlistCell(playlist)
             }
         }
     }
@@ -644,11 +490,87 @@ struct LibraryView: View {
     private func playlistCell(_ playlist: Playlist) -> some View {
         NavigationLink(destination: PlaylistDetailView(playlist: playlist)) {
             HStack {
-                Text(playlist.name)
-                Spacer()
-                Text("\(playlist.songs.count) songs")
-                    .foregroundColor(.gray)
+                playlistImageView(for: playlist)
+                playlistDetails(for: playlist)
             }
+            .padding(8)
+        }
+    }
+    
+    private func playlistImageView(for playlist: Playlist) -> some View {
+        Group {
+            if playlist.songs.isEmpty {
+                emptyPlaylistImage
+            } else if playlist.songs.count <= 3 {
+                singleSongImage(for: playlist)
+            } else {
+                multiSongImageCollage(for: playlist)
+            }
+        }
+    }
+    
+    private var emptyPlaylistImage: some View {
+        Image(systemName: "music.note")
+            .resizable()
+            .aspectRatio(contentMode: .fit)
+            .frame(width: 50, height: 50)
+            .foregroundColor(.gray)
+    }
+    
+    private func singleSongImage(for playlist: Playlist) -> some View {
+        AsyncImage(url: URL(string: playlist.songs.first?.artworkUrl ?? "")) { image in
+            image.resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(width: 50, height: 50)
+                .cornerRadius(8)
+        } placeholder: {
+            emptyPlaylistImage
+        }
+    }
+    
+    private func multiSongImageCollage(for playlist: Playlist) -> some View {
+        HStack(spacing: 2) {
+            VStack(spacing: 2) {
+                songThumbnail(playlist.songs[0])
+                songThumbnail(playlist.songs[1])
+            }
+            VStack(spacing: 2) {
+                songThumbnail(playlist.songs[2])
+                songThumbnail(playlist.songs[3])
+            }
+        }
+    }
+    
+    private func songThumbnail(_ song: Song) -> some View {
+        AsyncImage(url: URL(string: song.artworkUrl ?? "")) { image in
+            image.resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(width: 25, height: 25)
+                .clipped()
+        } placeholder: {
+            Image(systemName: "music.note")
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 25, height: 25)
+                .foregroundColor(.gray)
+        }
+    }
+    
+    private func playlistDetails(for playlist: Playlist) -> some View {
+        VStack(alignment: .leading) {
+            Text(playlist.name)
+                .font(.headline)
+            Text("Playlist • \(playlist.songs.count) songs")
+                .font(.subheadline)
+                .foregroundColor(.gray)
+        }
+    }
+    
+    private var alertContent: some View {
+        Group {
+            TextField("Playlist Name", text: $newPlaylistName)
+            Button("Create", action: createPlaylist)
+            Button("Cancel", role: .cancel) {}
         }
     }
     
@@ -659,56 +581,17 @@ struct LibraryView: View {
     }
 }
 
-// PlaylistDetailView.swift
-import SwiftUI
+// MARK: - Style Extensions
 
-struct PlaylistDetailView: View {
-    @EnvironmentObject var playlistStore: PlaylistStore
-    @State private var playlist: Playlist
-    @State private var isSearchPresented = false
-    
-    // Initialize with the playlist
-    init(playlist: Playlist) {
-        _playlist = State(initialValue: playlist)
-    }
-    
-    var body: some View {
-        VStack {
-            List(playlist.songs) { song in
-                VStack(alignment: .leading) {
-                    Text(song.trackName)
-                        .font(.headline)
-                    Text(song.artistName)
-                        .font(.subheadline)
-                }
-            }
-            
-            Button("Add Songs") {
-                isSearchPresented = true
-            }
-            .sheet(isPresented: $isSearchPresented) {
-                SongSearchView(playlist: playlist)
-            }
-        }
-        .navigationTitle(playlist.name)
-        .onAppear {
-            // Refresh the playlist from the store
-            if let updatedPlaylist = playlistStore.playlists.first(where: { $0.id == playlist.id }) {
-                playlist = updatedPlaylist
-            }
-        }
-        // Add this modifier to update immediately when songs change
-        .onChange(of: playlistStore.playlists) { _ in
-            if let updatedPlaylist = playlistStore.playlists.first(where: { $0.id == playlist.id }) {
-                playlist = updatedPlaylist
-            }
-        }
+extension View {
+    func actionButtonStyle() -> some View {
+        self.padding(8)
+            .background(Color.gray.opacity(0.2))
+            .cornerRadius(10)
     }
 }
 
-    
-// ContentView.swift
-import SwiftUI
+// MARK: - Content View
 
 struct ContentView: View {
     var body: some View {
@@ -718,8 +601,7 @@ struct ContentView: View {
 }
 
 #Preview {
-    ContentView()
+    MainAppView()
         .environmentObject(PlaylistStore())
 }
 
-*/

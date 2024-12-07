@@ -14,26 +14,29 @@ struct MainAppView: View {
     
     var body: some View {
         TabView(selection: $selectedTab) {
-            ContentView()
+          
+            HomeView()
                 .tabItem {
-                    Image(systemName: "pills.fill")
-                    Text("Take Medication")
+                    Image(systemName: "house")
+                    Text("Home")
                 }
-                .tag(0)
+                .tag(2)
             
-           NotesView()
+            SearchView()
                 .tabItem {
-                    Image(systemName: "square.and.pencil")
-                    Text("Notes")
+                    Image(systemName: "magnifyingglass")
+                    Text("Search")
                 }
                 .tag(1)
             
-//            DiaryView(dataStore: DataStore())
-//                .tabItem {
-//                    Image(systemName: "square.and.pencil")
-//                    Text("Diary")
-//                }
-//                .tag(2)
+       
+            ContentView()
+                .tabItem {
+                    Image(systemName: "book.pages")
+                    Text("Your Library")
+                }
+                .tag(0)
+            
         }
     }
 }
