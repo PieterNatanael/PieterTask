@@ -580,7 +580,7 @@ struct LibraryView: View {
         }
     }
     
-    private var sheetContent: some View { // This is the sheet content, which was the previous alertContent
+    private var sheetContent: some View {
             VStack {
                 Text("Name your playlist.")
                     .bold()
