@@ -145,6 +145,7 @@ class PlaylistStore: ObservableObject {
 }
 
 
+
 import SwiftUI
 import Combine
 
@@ -176,6 +177,7 @@ struct SongSearchView: View {
             }
         }
         .navigationTitle("Add Songs")
+       
         .onChange(of: searchText) { newValue in
             searchSongs(query: newValue)
         }
@@ -183,11 +185,30 @@ struct SongSearchView: View {
     
     // MARK: - Subviews
     
+
+       
     private var searchField: some View {
-        TextField("Search Songs", text: $searchText)
-            .textFieldStyle(RoundedBorderTextFieldStyle())
-            .padding()
+        HStack {
+            TextField("Search Songs", text: $searchText)
+                .textFieldStyle(RoundedBorderTextFieldStyle())
+                .padding()
+            
+            Button(action: {
+                searchText = "" // Clear the search text
+                presentationMode.wrappedValue.dismiss() // Dismiss the view
+            }) {
+                Text("Cancel")
+                    .foregroundColor(.blue)
+            }
+            .padding(.trailing) // Add padding for spacing
+        }
     }
+
+//    private var searchField: some View {
+//        TextField("Search Songs", text: $searchText)
+//            .textFieldStyle(RoundedBorderTextFieldStyle())
+//            .padding()
+//    }
     
     private var songListView: some View {
         List(songs) { song in
@@ -252,6 +273,8 @@ struct SongSearchView: View {
             .foregroundColor(.red)
     }
     
+    
+    
     // MARK: - Private Methods
     
     private func searchSongs(query: String) {
@@ -290,6 +313,8 @@ struct SongSearchView: View {
     }
 }
 
+
+
 // MARK: - Playlist Detail View
 
 struct PlaylistDetailView: View {
@@ -315,14 +340,18 @@ struct PlaylistDetailView: View {
     }
     
     private var playlistHeader: some View {
-        VStack {
-            Text(playlist.name)
-                .font(.title)
-                .fontWeight(.bold)
-            Text("\(playlist.songs.count) Songs")
-                .foregroundColor(.gray)
+        HStack {
+            VStack(alignment: .leading){
+                Text(playlist.name)
+                    .font(.title)
+                    .fontWeight(.bold)
+                Text("\(playlist.songs.count) Songs")
+                    .foregroundColor(.gray)
+            }
+            .padding()
+            Spacer()
         }
-        .padding()
+        .frame(maxWidth: .infinity)
     }
     
     private var songList: some View {
@@ -391,7 +420,8 @@ struct PlaylistDetailView: View {
 struct LibraryView: View {
     @EnvironmentObject var playlistStore: PlaylistStore
     @State private var viewMode: ViewMode = .list
-    @State private var showingAddPlaylistAlert = false
+    @State private var showingAddPlaylistSheet = false
+    @State private var showingPopup = false
     @State private var newPlaylistName = ""
     
     enum ViewMode {
@@ -400,25 +430,40 @@ struct LibraryView: View {
     
     var body: some View {
         NavigationView {
-            VStack {
-                headerSection
-                viewModeContent
-            }
-            .navigationBarHidden(true)
-            .alert("New Playlist", isPresented: $showingAddPlaylistAlert) {
-                alertContent
+            ZStack {
+                VStack {
+                    headerSection
+                    viewModeContent
+                }
+                .navigationBarHidden(true)
+                .sheet(isPresented: $showingAddPlaylistSheet) { // Changed from .alert to .sheet
+                                    sheetContent
+                                }
+                PopUpView(
+                                             isVisible: $showingPopup,
+                                             showingAddPlaylistAlert: $showingAddPlaylistSheet // Bind to sheet instead of alert
+                                         )
             }
         }
     }
     
     private var headerSection: some View {
-        HStack {
-            userProfileImage
-            headerTitle
-            Spacer()
-            actionButtons
+        VStack {
+            HStack {
+                userProfileImage
+                headerTitle
+                Spacer()
+                actionButtons
+            }
+            .padding()
+            Text("Playlist")
+                       .font(.headline)
+                       .padding(.horizontal, 16)
+                       .padding(.vertical, 6)
+                       .background(Capsule().fill(Color.gray.opacity(0.2)))
+                       .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding()
+        
     }
     
     private var userProfileImage: some View {
@@ -443,7 +488,7 @@ struct LibraryView: View {
     }
     
     private var addPlaylistButton: some View {
-        Button(action: { showingAddPlaylistAlert = true }) {
+        Button(action: {  showingPopup = true }) {
             Image(systemName: "plus")
                 .actionButtonStyle()
         }
@@ -541,6 +586,31 @@ struct LibraryView: View {
         }
     }
     
+    private var sheetContent: some View { // This is the sheet content, which was the previous alertContent
+            VStack {
+                Text("Name your playlist.")
+                    .bold()
+                TextField("My first library", text: $newPlaylistName)
+                    .padding()
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                HStack {
+                    Button("Confirm", action: createPlaylist)
+                        .bold()
+                        .padding(.vertical, 12) // Increase vertical padding for a taller button
+                                      .padding(.horizontal, 30) // Increase horizontal padding to make it longer
+                                      .background(Color.green) // Green background
+                                      .foregroundColor(.black) // White text color
+                                      .cornerRadius(25) // Pill shape
+                                      .frame(minWidth: 200)//
+//                    Button("Cancel", role: .cancel) {
+//                        showingAddPlaylistSheet = false // Close sheet on cancel
+//                    }
+                }
+                .padding()
+            }
+            .padding()
+        }
+    
     private func songThumbnail(_ song: Song) -> some View {
         AsyncImage(url: URL(string: song.artworkUrl ?? "")) { image in
             image.resizable()
@@ -578,8 +648,92 @@ struct LibraryView: View {
         guard !newPlaylistName.isEmpty else { return }
         playlistStore.addPlaylist(name: newPlaylistName)
         newPlaylistName = ""
+        showingAddPlaylistSheet = false
     }
 }
+
+
+struct PopUpView: View {
+    @Binding var isVisible: Bool
+    @Binding var showingAddPlaylistAlert: Bool
+
+    var body: some View {
+        if isVisible {
+            ZStack {
+                // Background dimmed layer
+                Color.black.opacity(0.5)
+                    .ignoresSafeArea()
+                    .onTapGesture {
+                        isVisible = false // Dismiss when tapping outside
+                    }
+
+                // Popup content at the bottom
+                // Popup content at the bottom
+                              VStack {
+                                  Button(action: {
+                                      // Perform action for the entire button tap
+                                      print("Playlist tapped")
+                             
+                                      isVisible = false
+                                      showingAddPlaylistAlert = true
+                                      
+                                  }) {
+                                      HStack {
+                                          Image(systemName: "music.note.house.fill")
+                                              .font(.title2) // Adjust icon size
+                                              .foregroundColor(.blue)
+                                          VStack(alignment: .leading) { // Align text to the left
+                                              Text("Playlist")
+                                                  .font(.headline)
+                                              Text("Create a playlist with a song")
+                                                  .font(.subheadline)
+                                                  .foregroundColor(.gray)
+                                          }
+                                          Spacer() // Push everything to the left
+                                      }
+                                      .padding()
+                                      .background(Color.white)
+                                      .cornerRadius(10)
+                                      .shadow(radius: 5)
+                                  }
+                                  .buttonStyle(PlainButtonStyle()) // Prevent default button styling
+                              }
+                              .frame(maxWidth: .infinity)
+                              .padding()
+                              .background(Color.white)
+                              .cornerRadius(10)
+                              .shadow(radius: 10)
+                              .padding(.horizontal)
+                              .padding(.bottom, 10) // Add some bottom spacing
+                              .frame(maxHeight: .infinity, alignment: .bottom) // Align to bottom
+                              .transition(.move(edge: .bottom)) // Animate from bottom
+                          }
+                          .animation(.easeInOut, value: isVisible)
+                      }
+                  }
+              }
+
+
+struct PopUp: View {
+    @State private var showPopup = false
+
+    var body: some View {
+        ZStack {
+            Button("Show Popup") {
+                showPopup = true
+            }
+            .font(.title)
+
+            PopUpView(isVisible: $showPopup, showingAddPlaylistAlert: $showPopup)
+        }
+    }
+}
+
+
+
+
+
+
 
 // MARK: - Style Extensions
 
