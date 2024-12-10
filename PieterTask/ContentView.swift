@@ -184,8 +184,6 @@ struct SongSearchView: View {
     }
     
     // MARK: - Subviews
-    
-
        
     private var searchField: some View {
         HStack {
@@ -204,11 +202,7 @@ struct SongSearchView: View {
         }
     }
 
-//    private var searchField: some View {
-//        TextField("Search Songs", text: $searchText)
-//            .textFieldStyle(RoundedBorderTextFieldStyle())
-//            .padding()
-//    }
+
     
     private var songListView: some View {
         List(songs) { song in
@@ -601,10 +595,7 @@ struct LibraryView: View {
                                       .background(Color.green) // Green background
                                       .foregroundColor(.black) // White text color
                                       .cornerRadius(25) // Pill shape
-                                      .frame(minWidth: 200)//
-//                    Button("Cancel", role: .cancel) {
-//                        showingAddPlaylistSheet = false // Close sheet on cancel
-//                    }
+                                      .frame(minWidth: 200)
                 }
                 .padding()
             }
@@ -664,55 +655,51 @@ struct PopUpView: View {
                 Color.black.opacity(0.5)
                     .ignoresSafeArea()
                     .onTapGesture {
-                        isVisible = false // Dismiss when tapping outside
+                        isVisible = false
                     }
 
-                // Popup content at the bottom
-                // Popup content at the bottom
-                              VStack {
-                                  Button(action: {
-                                      // Perform action for the entire button tap
-                                      print("Playlist tapped")
-                             
-                                      isVisible = false
-                                      showingAddPlaylistAlert = true
-                                      
-                                  }) {
-                                      HStack {
-                                          Image(systemName: "music.note.house.fill")
-                                              .font(.title2) // Adjust icon size
-                                              .foregroundColor(.blue)
-                                          VStack(alignment: .leading) { // Align text to the left
-                                              Text("Playlist")
-                                                  .font(.headline)
-                                              Text("Create a playlist with a song")
-                                                  .font(.subheadline)
-                                                  .foregroundColor(.gray)
-                                          }
-                                          Spacer() // Push everything to the left
-                                      }
-                                      .padding()
-                                      .background(Color.white)
-                                      .cornerRadius(10)
-                                      .shadow(radius: 5)
-                                  }
-                                  .buttonStyle(PlainButtonStyle()) // Prevent default button styling
-                              }
-                              .frame(maxWidth: .infinity)
-                              .padding()
-                              .background(Color.white)
-                              .cornerRadius(10)
-                              .shadow(radius: 10)
-                              .padding(.horizontal)
-                              .padding(.bottom, 10) // Add some bottom spacing
-                              .frame(maxHeight: .infinity, alignment: .bottom) // Align to bottom
-                              .transition(.move(edge: .bottom)) // Animate from bottom
-                          }
-                          .animation(.easeInOut, value: isVisible)
-                      }
-                  }
-              }
-
+                VStack {
+                    Button(action: {
+                        // Perform action for the entire button tap
+                        print("Playlist tapped")
+                        isVisible = false
+                        showingAddPlaylistAlert = true
+                    }) {
+                        HStack {
+                            Image(systemName: "music.note.house.fill")
+                                .font(.title2)
+                                .foregroundColor(.blue)
+                            
+                            VStack(alignment: .leading) {
+                                Text("Playlist")
+                                    .font(.headline)
+                                Text("Create a playlist with a song")
+                                    .font(.subheadline)
+                                    .foregroundColor(.gray)
+                            }
+                            Spacer()
+                        }
+                        .padding()
+                        .background(Color.white)
+                        .cornerRadius(10)
+                        .shadow(radius: 5)
+                    }
+                    .buttonStyle(PlainButtonStyle()) // Prevent default button styling
+                }
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(Color.white)
+                .cornerRadius(10)
+                .shadow(radius: 10)
+                .padding(.horizontal)
+                .padding(.bottom, 10) // Add some bottom spacing
+                .frame(maxHeight: .infinity, alignment: .bottom) // Align to bottom
+                .transition(.move(edge: .bottom)) // Animate from bottom
+            }
+            .animation(.easeInOut, value: isVisible)
+        }
+    }
+}
 
 struct PopUp: View {
     @State private var showPopup = false
@@ -723,14 +710,17 @@ struct PopUp: View {
                 showPopup = true
             }
             .font(.title)
-
-            PopUpView(isVisible: $showPopup, showingAddPlaylistAlert: $showPopup)
+            
+            // Display PopUpView when showPopup is true
+            if showPopup {
+                PopUpView(isVisible: $showPopup, showingAddPlaylistAlert: $showPopup)
+            }
         }
     }
 }
 
 
-
+      
 
 
 
